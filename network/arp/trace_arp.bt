@@ -1,0 +1,112 @@
+#!/usr/bin/env bpftrace
+
+#ifndef BPFTRACE_HAVE_BTF
+#include <linux/netdevice.h>
+#endif
+
+BEGIN
+{
+  printf("Tracing ping -> IP output -> ARP request path ... Hit Ctrl-C if needed.\n");
+}
+
+/*
+ * IP/L3 send path
+ * ping is ICMP, this is mainly IPv4 output path, not TCP-specific.
+ */
+kprobe:__ip_queue_xmit /comm == "ping"/
+{
+  printf("%llu  __ip_queue_xmit\n", nsecs);
+}
+
+kprobe:ip_local_out /comm == "ping"/
+{
+  printf("%llu  ip_local_out\n", nsecs);
+}
+
+kprobe:__ip_local_out /comm == "ping"/
+{
+  printf("%llu  __ip_local_out\n", nsecs);
+}
+
+kprobe:ip_output /comm == "ping"/
+{
+  printf("%llu  ip_output\n", nsecs);
+}
+
+kprobe:ip_finish_output /comm == "ping"/
+{
+  printf("%llu  ip_finish_output\n", nsecs);
+}
+
+kprobe:ip_finish_output2 /comm == "ping"/
+{
+  printf("%llu  ip_finish_output2\n", nsecs);
+}
+
+/*
+ * ARP / neighbour path
+ */
+kprobe:neigh_resolve_output /comm == "ping"/
+{
+  printf("%llu  neigh_resolve_output\n", nsecs);
+}
+
+kprobe:__neigh_event_send /comm == "ping"/
+{
+  printf("%llu  __neigh_event_send\n", nsecs);
+}
+
+kprobe:arp_solicit /comm == "ping"/
+{
+  printf("%llu  arp_solicit\n", nsecs);
+}
+
+kprobe:arp_send_dst /comm == "ping"/
+{
+  printf("%llu  arp_send_dst\n", nsecs);
+}
+
+/*
+ * 函数原型: struct sk_buff *arp_create(int type, int ptype, __be32 dest_ip,
+ *            struct net_device *dev, __be32 src_ip,
+ *            const unsigned char *dest_hw,
+ *            const unsigned char *src_hw,
+ *            const unsigned char *target_hw)
+ *
+ * 在 x86_64 架构中，参数通过寄存器传递：
+ * type: di (rdi)
+ * ptype: si (rsi)
+ * dest_ip: dx (rdx)
+ * dev: cx (rcx)
+ * src_ip: r8
+ * dest_hw: r9
+ * src_hw: stack (rsp+8)
+ * target_hw: stack (rsp+16)
+ */
+kprobe:arp_create /comm == "ping"/
+{
+  $type = arg0;
+  $ptype = arg1;
+  $dest_ip = arg2;
+  $dev = (struct net_device *)arg3;
+  $src_ip = arg4;
+
+  printf("%llu  arp_create(type=%d ptype=0x%x dest_ip=0x%08x dev=%s src_ip=0x%08x)\n",
+         nsecs,
+         $type,
+         $ptype,
+         $dest_ip,
+         $dev->name,
+         $src_ip);
+}
+
+kprobe:arp_xmit /comm == "ping"/
+{
+  printf("%llu  arp_xmit\n", nsecs);
+}
+
+kprobe:dev_queue_xmit /comm == "ping"/
+{
+  printf("%llu  dev_queue_xmit\n", nsecs);
+  exit();
+}
